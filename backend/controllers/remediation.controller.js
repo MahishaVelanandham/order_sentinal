@@ -57,8 +57,32 @@ const approveResolution = async (req, res, next) => {
       });
     }
 
+    if (action.status === 'REJECTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot approve an action that was previously rejected by operator.'
+      });
+    }
+
+    // Safety policy check: High-risk hard business rejections require manual intervention
+    if (action.actionType === 'ESCALATE_HUMAN_OPERATOR' && action.riskTier === 'HIGH_RISK') {
+      const order = await storageService.findOrderByIdentifier(action.orderNumber);
+      if (order && order.overallStatus === 'REJECTED') {
+        return res.status(400).json({
+          success: false,
+          message: 'Hard business rejections cannot be automatically approved for self-healing. Human operator intervention is required.'
+        });
+      }
+    }
+
     await storageService.updateHealingAction(action, {
       status: 'APPROVED'
+    });
+
+    emitEvent('remediation:approved', {
+      actionId: action.actionId,
+      orderNumber: action.orderNumber,
+      actionType: action.actionType
     });
 
     // Execute the resolution
@@ -92,15 +116,41 @@ const rejectRecommendation = async (req, res, next) => {
       });
     }
 
+    if (action.status === 'COMPLETED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot reject an action that has already completed.'
+      });
+    }
+
+    // Phase 2 Req 1: Rejecting a recommendation updates the recommendation to REJECTED.
+    // It must NOT cancel or reject the actual customer order.
     await storageService.updateHealingAction(action, {
       status: 'REJECTED',
-      'parameters.operatorNotes': reason
+      'parameters.operatorNotes': reason,
+      'executionResult.responseSummary': `Recommendation rejected: ${reason}`,
+      'executionResult.success': false
     });
 
     const order = await storageService.findOrderByIdentifier(action.orderNumber);
+
+    // Record rejection in OrderEvents for complete timeline audit
     if (order) {
-      await storageService.updateOrder(order, {
-        overallStatus: 'ESCALATED'
+      await storageService.createOrderEvent({
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        correlationId: order.correlationId,
+        stage: action.stage || order.currentStage || 'PAYMENT',
+        fromStage: order.currentStage,
+        toStage: order.currentStage,
+        eventType: 'STAGE_REJECTED',
+        httpStatusCode: 400,
+        latencyMs: 0,
+        metadata: {
+          actionId: action.actionId,
+          rejectionReason: reason,
+          note: 'Operator rejected self-healing recommendation. Order state preserved.'
+        }
       });
     }
 
@@ -119,7 +169,7 @@ const rejectRecommendation = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Recommendation rejected. Order marked for manual operator intervention.',
+      message: 'Recommendation rejected. Recommendation recorded as REJECTED in audit logs.',
       data: action
     });
   } catch (error) {
@@ -284,6 +334,24 @@ const escalateOrder = async (req, res, next) => {
         responseSummary: `Order manually escalated: ${reason}`,
         finalOrderStatus: 'ESCALATED',
         executionDurationMs: 0
+      }
+    });
+
+    // Record escalation event in order timeline
+    await storageService.createOrderEvent({
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      correlationId: order.correlationId,
+      stage: order.currentStage || 'PAYMENT',
+      fromStage: order.currentStage,
+      toStage: order.currentStage,
+      eventType: 'STAGE_DELAYED',
+      httpStatusCode: 429,
+      latencyMs: 0,
+      metadata: {
+        actionId,
+        escalationReason: reason,
+        note: 'Order transferred to human tier-2 telecom operations review queue.'
       }
     });
 

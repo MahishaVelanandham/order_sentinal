@@ -127,8 +127,8 @@ export default function ResolutionCentre({
       setActionErrorMsg(null);
       setActionSuccessMsg(null);
       const actionId = recommendation?.actionId || `ACT-${selectedIncident.orderNumber}`;
-      await approveResolution(actionId);
-      setActionSuccessMsg(`Resolution successfully executed! Order ${selectedIncident.orderNumber} self-healed.`);
+      const res = await approveResolution(actionId);
+      setActionSuccessMsg(res?.message || `Resolution successfully executed! Order ${selectedIncident.orderNumber} self-healed.`);
       if (onRefresh) onRefresh();
     } catch (err) {
       setActionErrorMsg('Approval failed: ' + (err.response?.data?.message || err.message));
@@ -145,8 +145,8 @@ export default function ResolutionCentre({
       setActionErrorMsg(null);
       setActionSuccessMsg(null);
       const actionId = recommendation?.actionId || `ACT-${selectedIncident.orderNumber}`;
-      await rejectRecommendation(actionId, 'Operator rejected automatic recommendation.');
-      setActionSuccessMsg(`Recommendation rejected. Order ${selectedIncident.orderNumber} moved to Escalation queue.`);
+      const res = await rejectRecommendation(actionId, 'Operator rejected automatic recommendation.');
+      setActionSuccessMsg(res?.message || `Recommendation rejected. Recorded in audit logs.`);
       if (onRefresh) onRefresh();
     } catch (err) {
       setActionErrorMsg('Rejection failed: ' + (err.response?.data?.message || err.message));
@@ -162,8 +162,8 @@ export default function ResolutionCentre({
       setIsActing(true);
       setActionErrorMsg(null);
       setActionSuccessMsg(null);
-      await retryOrder(selectedIncident.orderNumber);
-      setActionSuccessMsg(`Direct idempotent retry triggered for ${selectedIncident.orderNumber}. Order marked COMPLETED.`);
+      const res = await retryOrder(selectedIncident.orderNumber);
+      setActionSuccessMsg(res?.message || `Direct idempotent retry triggered for ${selectedIncident.orderNumber}.`);
       if (onRefresh) onRefresh();
     } catch (err) {
       setActionErrorMsg('Retry blocked: ' + (err.response?.data?.message || err.message));
@@ -179,8 +179,8 @@ export default function ResolutionCentre({
       setIsActing(true);
       setActionErrorMsg(null);
       setActionSuccessMsg(null);
-      await escalateOrder(selectedIncident.orderNumber, 'Manual escalation requested from Resolution Centre.');
-      setActionSuccessMsg(`Order ${selectedIncident.orderNumber} escalated to telecom tier-2 operations queue.`);
+      const res = await escalateOrder(selectedIncident.orderNumber, 'Manual escalation requested from Resolution Centre.');
+      setActionSuccessMsg(res?.message || `Order ${selectedIncident.orderNumber} escalated to telecom tier-2 operations queue.`);
       if (onRefresh) onRefresh();
     } catch (err) {
       setActionErrorMsg('Escalation error: ' + (err.response?.data?.message || err.message));
