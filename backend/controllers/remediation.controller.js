@@ -104,6 +104,13 @@ const rejectRecommendation = async (req, res, next) => {
       });
     }
 
+    const incident = await storageService.findIncidentByIdentifier(action.orderNumber);
+    if (incident) {
+      await storageService.updateIncident(incident, {
+        resolutionStatus: 'ESCALATED'
+      });
+    }
+
     emitEvent('remediation:rejected', {
       actionId: action.actionId,
       orderNumber: action.orderNumber,
@@ -250,6 +257,13 @@ const escalateOrder = async (req, res, next) => {
     await storageService.updateOrder(order, {
       overallStatus: 'ESCALATED'
     });
+
+    const incident = await storageService.findIncidentByIdentifier(order.orderNumber);
+    if (incident) {
+      await storageService.updateIncident(incident, {
+        resolutionStatus: 'ESCALATED'
+      });
+    }
 
     const actionId = `ACT-ESC-${Date.now().toString().slice(-6)}`;
     const action = await storageService.createHealingAction({

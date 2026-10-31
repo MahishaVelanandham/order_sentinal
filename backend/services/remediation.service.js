@@ -218,6 +218,13 @@ class RemediationService {
         overallStatus: 'ESCALATED'
       });
 
+      const incident = await storageService.findIncidentByIdentifier(order.orderNumber);
+      if (incident) {
+        await storageService.updateIncident(incident, {
+          resolutionStatus: 'ESCALATED'
+        });
+      }
+
       await storageService.updateHealingAction(actionRecord, {
         status: 'ESCALATED',
         executionResult: {

@@ -46,7 +46,11 @@ export default function ResolutionCentre({
 
   // Filter incidents for resolutions
   const pendingIncidents = incidents.filter(
-    (i) => i.resolutionStatus === 'PENDING' || i.resolutionStatus === 'AWAITING_APPROVAL' || (!i.resolutionStatus && i.overallStatus !== 'COMPLETED')
+    (i) =>
+      i.resolutionStatus === 'PENDING' ||
+      i.resolutionStatus === 'OPEN' ||
+      i.resolutionStatus === 'AWAITING_APPROVAL' ||
+      (!i.resolutionStatus && i.overallStatus !== 'COMPLETED')
   );
 
   const resolvedIncidents = incidents.filter(
@@ -54,7 +58,7 @@ export default function ResolutionCentre({
   );
 
   const escalatedIncidents = incidents.filter(
-    (i) => i.resolutionStatus === 'ESCALATED' || i.severity === 'CRITICAL'
+    (i) => i.resolutionStatus === 'ESCALATED' || i.resolutionStatus === 'REJECTED' || i.severity === 'CRITICAL'
   );
 
   // Sync selected incident
