@@ -34,18 +34,18 @@ export default function DigitalTwinPage({
   onSelectOrder,
   onNavigateTab
 }) {
-  const [currentOrder, setCurrentOrder] = useState(selectedOrder || orders[0] || null);
+  const [currentOrder, setCurrentOrder] = useState(() => selectedOrder || (orders.length > 0 ? orders[0] : null));
   const [predictionData, setPredictionData] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
 
-  // Sync prop changes
+  // Sync prop changes and ensure fallback if currentOrder is not set
   useEffect(() => {
     if (selectedOrder) {
       setCurrentOrder(selectedOrder);
-    } else if (!currentOrder && orders.length > 0) {
-      setCurrentOrder(orders[0]);
+    } else if (orders.length > 0) {
+      setCurrentOrder((prev) => prev || orders[0]);
     }
   }, [selectedOrder, orders]);
 
