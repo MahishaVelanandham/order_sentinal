@@ -1,0 +1,28 @@
+{
+  "name": "orderflow-sentinel-workspace",
+  "version": "1.0.0",
+  "description": "Self-Healing AI for Order & API Failure Resolution with Predictive Digital Twin",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:ai": "cd ai-engine && uvicorn app:app --reload --port 8000",
+    "dev": "concurrently -n \"BACKEND,FRONTEND,AI-ENGINE\" -c \"blue,green,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:ai\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "aiops",
+    "self-healing",
+    "digital-twin",
+    "order-management",
+    "telecom",
+    "fastapi",
+    "react",
+    "express"
+  ],
+  "author": "OrderFlow Sentinel Team",
+  "license": "ISC"
+}
