@@ -41,6 +41,7 @@ export default function ResolutionCentre({
   const [isActing, setIsActing] = useState(false);
   const [resolutionHistory, setResolutionHistory] = useState([]);
   const [actionSuccessMsg, setActionSuccessMsg] = useState(null);
+  const [actionErrorMsg, setActionErrorMsg] = useState(null);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   // Filter incidents for resolutions
@@ -119,13 +120,14 @@ export default function ResolutionCentre({
     if (!recommendation && !selectedIncident) return;
     try {
       setIsActing(true);
+      setActionErrorMsg(null);
+      setActionSuccessMsg(null);
       const actionId = recommendation?.actionId || `ACT-${selectedIncident.orderNumber}`;
-      const res = await approveResolution(actionId);
+      await approveResolution(actionId);
       setActionSuccessMsg(`Resolution successfully executed! Order ${selectedIncident.orderNumber} self-healed.`);
       if (onRefresh) onRefresh();
     } catch (err) {
-      // Fallback direct retry if actionId not found in backend session
-      handleDirectRetry();
+      setActionErrorMsg('Approval failed: ' + (err.response?.data?.message || err.message));
     } finally {
       setIsActing(false);
     }
@@ -136,12 +138,14 @@ export default function ResolutionCentre({
     if (!selectedIncident) return;
     try {
       setIsActing(true);
+      setActionErrorMsg(null);
+      setActionSuccessMsg(null);
       const actionId = recommendation?.actionId || `ACT-${selectedIncident.orderNumber}`;
       await rejectRecommendation(actionId, 'Operator rejected automatic recommendation.');
       setActionSuccessMsg(`Recommendation rejected. Order ${selectedIncident.orderNumber} moved to Escalation queue.`);
       if (onRefresh) onRefresh();
     } catch (err) {
-      handleEscalate();
+      setActionErrorMsg('Rejection failed: ' + (err.response?.data?.message || err.message));
     } finally {
       setIsActing(false);
     }
@@ -152,11 +156,13 @@ export default function ResolutionCentre({
     if (!selectedIncident) return;
     try {
       setIsActing(true);
-      const res = await retryOrder(selectedIncident.orderNumber);
+      setActionErrorMsg(null);
+      setActionSuccessMsg(null);
+      await retryOrder(selectedIncident.orderNumber);
       setActionSuccessMsg(`Direct idempotent retry triggered for ${selectedIncident.orderNumber}. Order marked COMPLETED.`);
       if (onRefresh) onRefresh();
     } catch (err) {
-      alert('Retry error: ' + (err.response?.data?.message || err.message));
+      setActionErrorMsg('Retry blocked: ' + (err.response?.data?.message || err.message));
     } finally {
       setIsActing(false);
     }
@@ -167,11 +173,13 @@ export default function ResolutionCentre({
     if (!selectedIncident) return;
     try {
       setIsActing(true);
-      const res = await escalateOrder(selectedIncident.orderNumber, 'Manual escalation requested from Resolution Centre.');
+      setActionErrorMsg(null);
+      setActionSuccessMsg(null);
+      await escalateOrder(selectedIncident.orderNumber, 'Manual escalation requested from Resolution Centre.');
       setActionSuccessMsg(`Order ${selectedIncident.orderNumber} escalated to telecom tier-2 operations queue.`);
       if (onRefresh) onRefresh();
     } catch (err) {
-      alert('Escalation error: ' + (err.response?.data?.message || err.message));
+      setActionErrorMsg('Escalation error: ' + (err.response?.data?.message || err.message));
     } finally {
       setIsActing(false);
     }
@@ -246,7 +254,22 @@ export default function ResolutionCentre({
         </div>
       </div>
 
-      {/* Success Notification Alert */}
+      {/* Notification Alerts */}
+      {actionErrorMsg && (
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{actionErrorMsg}</span>
+          </div>
+          <button
+            onClick={() => setActionErrorMsg(null)}
+            className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {actionSuccessMsg && (
         <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between animate-in fade-in">
           <div className="flex items-center space-x-2">
@@ -255,7 +278,7 @@ export default function ResolutionCentre({
           </div>
           <button
             onClick={() => setActionSuccessMsg(null)}
-            className="text-emerald-600 hover:text-emerald-800 font-bold"
+            className="text-emerald-600 hover:text-emerald-800 font-bold cursor-pointer"
           >
             &times;
           </button>

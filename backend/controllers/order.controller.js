@@ -60,18 +60,55 @@ const getOrders = async (req, res, next) => {
       status,
       stage,
       scenario,
+      search,
+      page = 1,
       limit = 50,
-      skip = 0
+      skip
     } = req.query;
 
     const filter = {};
-    if (status) filter.overallStatus = status.toUpperCase();
-    if (stage) filter.currentStage = stage.toUpperCase();
-    if (scenario) filter.scenario = scenario.toUpperCase();
+
+    // 1. Status Filter
+    if (status && status.toUpperCase() !== 'ALL') {
+      const upperStatus = status.toUpperCase();
+      if (upperStatus === 'PROCESSING') {
+        filter.overallStatus = { $in: ['PROCESSING', 'IN_FLIGHT', 'HEALING', 'PENDING'] };
+      } else {
+        filter.overallStatus = upperStatus;
+      }
+    }
+
+    // 2. Stage Filter
+    if (stage && stage.toUpperCase() !== 'ALL') {
+      filter.currentStage = stage.toUpperCase();
+    }
+
+    // 3. Scenario Filter
+    if (scenario && scenario.toUpperCase() !== 'ALL') {
+      filter.scenario = scenario.toUpperCase();
+    }
+
+    // 4. Text Search (Order #, Correlation ID, Customer Name, Plan, Product)
+    if (search && search.trim()) {
+      const cleanSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(cleanSearch, 'i');
+      filter.$or = [
+        { orderNumber: searchRegex },
+        { correlationId: searchRegex },
+        { 'customer.name': searchRegex },
+        { 'customer.customerRef': searchRegex },
+        { productType: searchRegex },
+        { 'plan.planName': searchRegex }
+      ];
+    }
+
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 500);
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const skipNum = skip !== undefined ? Math.max(parseInt(skip, 10) || 0, 0) : (pageNum - 1) * limitNum;
 
     const { data: orders, total } = await storageService.findOrders(filter, {
-      limit: parseInt(limit, 10),
-      skip: parseInt(skip, 10)
+      limit: limitNum,
+      skip: skipNum
     });
 
     const statusSummary = await storageService.getStatusSummary();
@@ -81,8 +118,10 @@ const getOrders = async (req, res, next) => {
       summary: statusSummary,
       pagination: {
         total,
-        limit: parseInt(limit, 10),
-        skip: parseInt(skip, 10),
+        page: pageNum,
+        limit: limitNum,
+        skip: skipNum,
+        totalPages: Math.ceil(total / limitNum) || 1,
         returned: orders.length
       },
       data: orders

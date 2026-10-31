@@ -75,9 +75,26 @@ class StorageService {
       seenIds.add(idStr);
 
       let match = true;
-      if (filter.overallStatus && order.overallStatus !== filter.overallStatus) match = false;
+      if (filter.overallStatus) {
+        if (typeof filter.overallStatus === 'object' && Array.isArray(filter.overallStatus.$in)) {
+          if (!filter.overallStatus.$in.includes(order.overallStatus)) match = false;
+        } else if (order.overallStatus !== filter.overallStatus) {
+          match = false;
+        }
+      }
       if (filter.currentStage && order.currentStage !== filter.currentStage) match = false;
       if (filter.scenario && order.scenario !== filter.scenario) match = false;
+      if (filter.$or && Array.isArray(filter.$or)) {
+        const anyMatch = filter.$or.some((cond) => {
+          for (const key of Object.keys(cond)) {
+            const val = key.includes('.') ? key.split('.').reduce((o, i) => o?.[i], order) : order[key];
+            if (cond[key] instanceof RegExp && cond[key].test(String(val || ''))) return true;
+            if (val === cond[key]) return true;
+          }
+          return false;
+        });
+        if (!anyMatch) match = false;
+      }
 
       if (match) results.push(order);
     }

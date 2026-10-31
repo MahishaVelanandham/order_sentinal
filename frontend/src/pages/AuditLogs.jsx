@@ -10,7 +10,8 @@ import {
   ExternalLink,
   Filter,
   User,
-  Bot
+  Bot,
+  AlertTriangle
 } from 'lucide-react';
 import { fetchResolutionHistory } from '../services/api';
 
@@ -23,7 +24,7 @@ export default function AuditLogs({ onRefresh }) {
 
   const loadAuditHistory = () => {
     setIsLoading(true);
-    fetchResolutionHistory()
+    fetchResolutionHistory({ limit: 100 })
       .then((res) => {
         setLogs(res.data || res.history || []);
         setIsOfflineMode(false);
@@ -32,45 +33,6 @@ export default function AuditLogs({ onRefresh }) {
       .catch((err) => {
         console.warn('Could not fetch audit history:', err);
         setIsOfflineMode(true);
-        // Fallback synthetic audit items if empty
-        setLogs([
-          {
-            actionId: 'ACT-ORD-88219-01',
-            orderNumber: 'ORD-88219',
-            correlationId: 'CORR-88219-PROV',
-            actionType: 'RETRY_WITH_EXPONENTIAL_BACKOFF',
-            riskTier: 'LOW_RISK',
-            initiatedBy: 'AUTONOMOUS_SENTINEL_AI',
-            status: 'SUCCESS',
-            idempotencyKey: 'IDEMP-ORD-88219-RETRY-1',
-            summary: 'OLT Provisioning Gateway retried after 500ms backoff. HTTP 200 received.',
-            timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString()
-          },
-          {
-            actionId: 'ACT-ORD-91042-02',
-            orderNumber: 'ORD-91042',
-            correlationId: 'CORR-91042-AUTH',
-            actionType: 'SIMULATED_TOKEN_REFRESH',
-            riskTier: 'LOW_RISK',
-            initiatedBy: 'AUTONOMOUS_SENTINEL_AI',
-            status: 'SUCCESS',
-            idempotencyKey: 'IDEMP-ORD-91042-AUTH-1',
-            summary: 'CRM Auth Token expired (401). Generated synthetic refresh token and resumed stage.',
-            timestamp: new Date(Date.now() - 1000 * 60 * 35).toISOString()
-          },
-          {
-            actionId: 'ACT-ORD-77190-03',
-            orderNumber: 'ORD-77190',
-            correlationId: 'CORR-77190-VALID',
-            actionType: 'HUMAN_OPERATOR_ESCALATION',
-            riskTier: 'HIGH_RISK',
-            initiatedBy: 'OPERATOR_DISPATCH',
-            status: 'PENDING_REVIEW',
-            idempotencyKey: 'IDEMP-ORD-77190-ESC-1',
-            summary: 'Address validation failed. Building outside fiber footprint. Escalated to Tier-2.',
-            timestamp: new Date(Date.now() - 1000 * 60 * 60).toISOString()
-          }
-        ]);
         setIsLoading(false);
       });
   };
@@ -89,7 +51,8 @@ export default function AuditLogs({ onRefresh }) {
         log.actionId?.toLowerCase().includes(q) ||
         log.actionType?.toLowerCase().includes(q) ||
         log.idempotencyKey?.toLowerCase().includes(q) ||
-        log.summary?.toLowerCase().includes(q);
+        log.decisionReason?.toLowerCase().includes(q) ||
+        log.executionResult?.responseSummary?.toLowerCase().includes(q);
 
       const matchStatus = statusFilter === 'ALL' || log.status === statusFilter;
       return matchSearch && matchStatus;
@@ -103,11 +66,8 @@ export default function AuditLogs({ onRefresh }) {
         <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-xl flex items-center justify-between text-sm shadow-xs animate-fadeIn">
           <div className="flex items-center space-x-2 font-medium">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>OFFLINE DEMONSTRATION MODE – Backend data unavailable.</span>
+            <span>OFFLINE DEMONSTRATION MODE – Backend audit log service unavailable.</span>
           </div>
-          <span className="text-xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-300">
-            Simulated Audit Records
-          </span>
         </div>
       )}
 
@@ -130,18 +90,24 @@ export default function AuditLogs({ onRefresh }) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-cyan-500 cursor-pointer"
           >
-            <option value="ALL">All Outcomes</option>
-            <option value="SUCCESS">Success</option>
-            <option value="PENDING_REVIEW">Pending Review</option>
+            <option value="ALL">All Statuses ({logs.length})</option>
+            <option value="COMPLETED">Completed / Healed</option>
+            <option value="RECOMMENDED">Recommended</option>
+            <option value="APPROVED">Approved</option>
+            <option value="ESCALATED">Escalated</option>
+            <option value="REJECTED">Rejected</option>
             <option value="FAILED">Failed</option>
           </select>
 
           <button
-            onClick={loadAuditHistory}
+            onClick={() => {
+              loadAuditHistory();
+              if (onRefresh) onRefresh();
+            }}
             disabled={isLoading}
-            className="p-2 rounded-lg text-slate-600 hover:text-slate-900 bg-slate-50 border border-slate-200 transition-colors disabled:opacity-50"
+            className="p-2 rounded-lg text-slate-600 hover:text-slate-900 bg-slate-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
             title="Refresh Audit Logs"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-cyan-600' : ''}`} />
@@ -166,15 +132,26 @@ export default function AuditLogs({ onRefresh }) {
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredLogs.map((log, idx) => {
-                const isAuto = log.initiatedBy?.includes('AUTONOMOUS') || log.initiatedBy?.includes('AI');
+                const logTime = log.performedAt || log.createdAt || log.timestamp || Date.now();
+                const isAuto =
+                  log.requiresHumanApproval === false &&
+                  !log.actionType?.includes('MANUAL') &&
+                  log.actionType !== 'ESCALATE_HUMAN_OPERATOR';
+
+                const summaryText =
+                  log.executionResult?.responseSummary ||
+                  log.decisionReason ||
+                  log.summary ||
+                  log.message ||
+                  'Remediation action registered in audit log.';
 
                 return (
-                  <tr key={log.actionId || idx} className="hover:bg-slate-50/80 transition-colors">
+                  <tr key={log.actionId || log._id || idx} className="hover:bg-slate-50/80 transition-colors">
                     {/* Timestamp */}
                     <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 font-mono text-[11px]">
-                      {new Date(log.timestamp || Date.now()).toLocaleTimeString()}{' '}
+                      {new Date(logTime).toLocaleTimeString()}{' '}
                       <span className="text-slate-400 block text-[10px]">
-                        {new Date(log.timestamp || Date.now()).toLocaleDateString()}
+                        {new Date(logTime).toLocaleDateString()}
                       </span>
                     </td>
 
@@ -187,7 +164,7 @@ export default function AuditLogs({ onRefresh }) {
                     {/* Remediation Policy */}
                     <td className="px-5 py-3.5">
                       <span className="font-semibold text-slate-800 text-[11px]">
-                        {log.actionType || log.remediationAction || 'EXPONENTIAL_BACKOFF_RETRY'}
+                        {log.actionType || 'EXPONENTIAL_RETRY'}
                       </span>
                     </td>
 
@@ -197,12 +174,12 @@ export default function AuditLogs({ onRefresh }) {
                         {isAuto ? (
                           <>
                             <Bot className="w-3.5 h-3.5 text-cyan-600" />
-                            Autonomous AI
+                            Autonomous Sentinel AI
                           </>
                         ) : (
                           <>
                             <User className="w-3.5 h-3.5 text-indigo-600" />
-                            Operator
+                            Operator Dispatch
                           </>
                         )}
                       </span>
@@ -212,9 +189,11 @@ export default function AuditLogs({ onRefresh }) {
                     <td className="px-5 py-3.5">
                       <span
                         className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                          log.riskTier === 'LOW_RISK'
+                          log.riskTier === 'LOW_RISK' || log.riskTier === 'LOW'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : log.riskTier === 'MEDIUM_RISK' || log.riskTier === 'MEDIUM'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
                         }`}
                       >
                         {log.riskTier || 'LOW_RISK'}
@@ -225,19 +204,21 @@ export default function AuditLogs({ onRefresh }) {
                     <td className="px-5 py-3.5">
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          log.status === 'SUCCESS' || log.status === 'RESOLVED'
+                          log.status === 'COMPLETED' || log.status === 'SUCCESS' || log.status === 'RESOLVED'
                             ? 'bg-emerald-100 text-emerald-800'
                             : log.status === 'FAILED'
                             ? 'bg-rose-100 text-rose-800'
-                            : 'bg-purple-100 text-purple-800'
+                            : log.status === 'ESCALATED' || log.status === 'REJECTED'
+                            ? 'bg-purple-100 text-purple-800'
+                            : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {log.status === 'SUCCESS' || log.status === 'RESOLVED' ? (
+                        {log.status === 'COMPLETED' || log.status === 'SUCCESS' || log.status === 'RESOLVED' ? (
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                         ) : log.status === 'FAILED' ? (
                           <XCircle className="w-3 h-3 text-rose-600" />
                         ) : (
-                          <Clock className="w-3 h-3 text-purple-600" />
+                          <Clock className="w-3 h-3 text-amber-600" />
                         )}
                         {log.status}
                       </span>
@@ -245,8 +226,8 @@ export default function AuditLogs({ onRefresh }) {
 
                     {/* Idempotency & Summary */}
                     <td className="px-5 py-3.5 max-w-xs">
-                      <div className="text-[11px] text-slate-700 font-medium truncate" title={log.summary || log.message}>
-                        {log.summary || log.message || 'Operation executed safely.'}
+                      <div className="text-[11px] text-slate-700 font-medium truncate" title={summaryText}>
+                        {summaryText}
                       </div>
                       <div className="text-[10px] font-mono text-slate-400 mt-0.5 truncate" title={log.idempotencyKey}>
                         Key: {log.idempotencyKey || 'IDEMP-SENTINEL-DEF'}
@@ -260,13 +241,23 @@ export default function AuditLogs({ onRefresh }) {
                 <tr>
                   <td colSpan={7} className="px-5 py-10 text-center text-slate-400">
                     <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="font-medium text-slate-600">No audit records found</p>
-                    <p className="text-[11px] mt-0.5">Remediation actions taken in the Resolution Centre will appear here.</p>
+                    <p className="font-medium text-slate-600">No audit records match your criteria</p>
+                    <p className="text-[11px] mt-0.5">Execute resolutions in the Resolution Centre to register new immutable actions.</p>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+          <span>
+            Showing {filteredLogs.length} of {logs.length} logged remediation events
+          </span>
+          <span className="text-[11px] text-slate-400 font-mono">
+            Cryptographic Idempotency Guard Active
+          </span>
         </div>
       </div>
     </div>
